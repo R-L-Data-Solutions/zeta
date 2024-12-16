@@ -38,179 +38,150 @@ st.markdown("""
         background: #F8F9FA;
         color: #333333;
     }
-    h1 {
-        color: #333333;
-        font-weight: 600;
-    }
-    h2 {
+    h1, h2, h3 {
         color: #333333;
         font-weight: 500;
     }
-    h3 {
+    p, .stMarkdown {
         color: #333333;
-        font-weight: 500;
-    }
-    p {
-        color: #333333;
-    }
-    .stMarkdown {
-        color: #333333;
-    }
-    .metric-label {
-        color: #333333 !important;
-        font-weight: 500;
-    }
-    .metric-value {
-        color: #333333 !important;
-        font-weight: 600;
-    }
-    div[data-testid="stMetricValue"] > div {
-        color: #333333;
-        font-weight: 600;
-    }
-    div[data-testid="stMetricLabel"] > div {
-        color: #333333;
-    }
-    /* Ajustes específicos para a sidebar */
-    .sidebar .sidebar-content {
-        background-color: #F8F9FA;
-    }
-    .sidebar h1, .sidebar h2, .sidebar h3, .sidebar p {
-        color: #333333 !important;
-    }
-    /* Ajustes para links e texto selecionado */
-    a {
-        color: #1A73E8;
-    }
-    ::selection {
-        background: #E8F0FE;
-        color: #333333;
-    }
-    /* Ajustes para elementos do Streamlit */
-    .stSelectbox label {
-        color: #333333 !important;
-    }
-    .stSelectbox div[data-baseweb="select"] {
-        background-color: #FFFFFF;
     }
     </style>
 """, unsafe_allow_html=True)
 
-# Configurações de tema para os gráficos
-CHART_THEME = {
-    'bgcolor': '#FFFFFF',
-    'font_color': '#333333',
-    'title_color': '#333333',
-    'grid_color': '#E0E0E0',
-    'axis_color': '#757575'
-}
+def formatar_valor(valor):
+    """Formata valores monetários."""
+    return f"R$ {valor:,.2f}"
 
 def criar_grafico_barras(df, x, y, title):
     """Cria gráfico de barras com estilo padronizado."""
-    # Definir uma paleta de cores mais distintas
-    colors = ['#4CAF50', '#2196F3', '#FFC107', '#E91E63', '#9C27B0']
+    # Definir cores diferentes para cada barra
+    colors = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd']
     
-    # Criar o gráfico com mais informações no hover
-    fig = px.bar(
-        df, 
-        x=x, 
-        y=y, 
-        title=title,
-        color=x,  # Usar subcategoria para colorir
-        color_discrete_sequence=colors,
-        text=y,  # Mostrar valores nas barras
-        hover_data={
-            'VENDA_VALOR': ':,.2f',
-            'MARGEM': ':.1%',
-            'ID_CLIENTE': ':,d'
-        }
-    )
+    fig = go.Figure()
     
-    # Atualizar o layout com mais customizações
+    # Adiciona as barras uma por uma para ter cores diferentes
+    for i, (index, row) in enumerate(df.iterrows()):
+        fig.add_trace(go.Bar(
+            x=[row[x]],
+            y=[row[y]],
+            text=[f"{row[y]:.3f}"],
+            textposition='auto',
+            name=row[x],
+            marker_color=colors[i % len(colors)]
+        ))
+    
     fig.update_layout(
-        plot_bgcolor=CHART_THEME['bgcolor'],
-        paper_bgcolor=CHART_THEME['bgcolor'],
-        font={'color': CHART_THEME['font_color'], 'size': 12},
-        title={
-            'font': {'color': CHART_THEME['title_color'], 'size': 16},
-            'x': 0.5,
-            'xanchor': 'center'
-        },
-        xaxis={
-            'gridcolor': CHART_THEME['grid_color'],
-            'color': CHART_THEME['axis_color'],
-            'tickangle': 45,
-            'title': None  # Remover título do eixo x
-        },
-        yaxis={
-            'gridcolor': CHART_THEME['grid_color'],
-            'color': CHART_THEME['axis_color'],
-            'title': 'Score'
-        },
+        title=title,
+        xaxis_title=x.replace('_', ' ').title(),
+        yaxis_title='Score',
+        plot_bgcolor='white',
         showlegend=False,
-        margin=dict(t=60, b=120, l=60, r=20)  # Ajustar margens
-    )
-    
-    # Atualizar o texto nas barras
-    fig.update_traces(
-        texttemplate='%{text:.2f}',
-        textposition='outside',
-        textfont=dict(size=12, color=CHART_THEME['font_color'])
+        height=400,
+        bargap=0.2
     )
     
     return fig
 
 def criar_grafico_scatter(df, x, y, color, title):
     """Cria gráfico de dispersão com estilo padronizado."""
-    # Criar o gráfico com mais informações
-    fig = px.scatter(
-        df,
-        x=x,
-        y=y,
-        color=color,
+    # Criar o gráfico
+    fig = go.Figure()
+    
+    # Adicionar os pontos
+    fig.add_trace(go.Scatter(
+        x=df[x],
+        y=df[y],
+        mode='markers',
+        marker=dict(
+            size=10,
+            color=df[color],
+            colorscale='Viridis',
+            showscale=True,
+            colorbar=dict(title='Margem')
+        ),
+        hovertemplate="<br>".join([
+            "Margem: %{x:.1%}",
+            "Valor: R$ %{y:,.2f}",
+            "<extra></extra>"
+        ])
+    ))
+    
+    fig.update_layout(
         title=title,
-        color_continuous_scale='viridis',
-        size='VENDA_VALOR',  # Tamanho dos pontos baseado no valor de venda
-        hover_data={
-            'NOME_SKU': True,
-            'VENDA_VALOR': ':,.2f',
-            'MARGEM': ':.1%',
-            'ID_CLIENTE': ':,d'
-        },
-        labels={
-            'VENDA_VALOR': 'Valor de Venda (R$)',
-            'MARGEM': 'Margem (%)',
-            'NOME_SKU': 'Produto'
-        }
+        xaxis_title='Margem (%)',
+        yaxis_title='Valor de Venda (R$)',
+        plot_bgcolor='white',
+        height=400,
+        xaxis=dict(
+            tickformat='.0%',
+            showgrid=True,
+            gridcolor='lightgray',
+            zeroline=False
+        ),
+        yaxis=dict(
+            tickformat='R$ ,.0f',
+            showgrid=True,
+            gridcolor='lightgray',
+            zeroline=False
+        )
     )
     
-    # Atualizar o layout
+    return fig
+
+def criar_grafico_detalhado(df_subcategoria, title):
+    """Cria gráfico de barras horizontal para análise da subcategoria."""
+    # Preparar os dados
+    df_analise = df_subcategoria.copy()
+    
+    # Calcular quartis de venda
+    df_analise['Faixa'] = pd.qcut(
+        df_analise['VENDA_VALOR'], 
+        q=3, 
+        labels=['Vendas Baixas', 'Vendas Médias', 'Vendas Altas']
+    )
+    
+    # Agregar dados por faixa
+    df_grouped = df_analise.groupby('Faixa').agg({
+        'VENDA_VALOR': 'sum',
+        'MARGEM': 'mean'
+    }).reset_index()
+    
+    # Ordenar por valor de venda
+    df_grouped = df_grouped.sort_values('VENDA_VALOR', ascending=True)
+    
+    # Criar o gráfico
+    fig = go.Figure()
+    
+    # Adicionar barras horizontais
+    fig.add_trace(go.Bar(
+        y=df_grouped['Faixa'],
+        x=df_grouped['VENDA_VALOR'],
+        orientation='h',
+        text=df_grouped['VENDA_VALOR'].apply(lambda x: f'R$ {x:,.0f}'),
+        textposition='auto',
+        marker_color=['#ff9999', '#66b3ff', '#99ff99'],
+        customdata=df_grouped['MARGEM'],
+        hovertemplate="<br>".join([
+            "%{y}",
+            "Valor: R$ %{x:,.2f}",
+            "Margem Média: %{customdata:.1%}",
+            "<extra></extra>"
+        ])
+    ))
+    
     fig.update_layout(
-        plot_bgcolor=CHART_THEME['bgcolor'],
-        paper_bgcolor=CHART_THEME['bgcolor'],
-        font={'color': CHART_THEME['font_color'], 'size': 12},
-        title={
-            'font': {'color': CHART_THEME['title_color'], 'size': 16},
-            'x': 0.5,
-            'xanchor': 'center'
-        },
-        xaxis={
-            'gridcolor': CHART_THEME['grid_color'],
-            'color': CHART_THEME['axis_color'],
-            'title': 'Margem (%)',
-            'tickformat': '.1%'
-        },
-        yaxis={
-            'gridcolor': CHART_THEME['grid_color'],
-            'color': CHART_THEME['axis_color'],
-            'title': 'Valor de Venda (R$)',
-            'tickformat': ',.0f'
-        },
-        coloraxis_colorbar={
-            'title': 'Margem',
-            'tickformat': '.1%'
-        },
-        margin=dict(t=60, b=60, l=80, r=20)
+        title=title,
+        xaxis_title='Valor Total de Vendas (R$)',
+        yaxis_title='Faixa de Venda',
+        plot_bgcolor='white',
+        height=400,
+        showlegend=False,
+        xaxis=dict(
+            tickformat='R$ ,.0f',
+            showgrid=True,
+            gridcolor='lightgray'
+        ),
+        bargap=0.3
     )
     
     return fig
@@ -218,28 +189,9 @@ def criar_grafico_scatter(df, x, y, color, title):
 def carregar_dados():
     """Carrega e prepara os dados das bases de vendas e clientes."""
     try:
-        # Usar st.file_uploader para permitir upload dos arquivos
-        st.sidebar.markdown("### 📂 Upload de Dados")
-        
-        uploaded_vendas = st.sidebar.file_uploader(
-            "Upload da base de vendas (Excel)",
-            type=['xlsx'],
-            key='vendas'
-        )
-        
-        uploaded_clientes = st.sidebar.file_uploader(
-            "Upload da base de clientes (Excel)",
-            type=['xlsx'],
-            key='clientes'
-        )
-        
-        if uploaded_vendas is None or uploaded_clientes is None:
-            st.warning("⚠️ Por favor, faça o upload dos arquivos de vendas e clientes para continuar.")
-            return None
-            
-        # Ler os dados dos arquivos enviados
-        vendas_df = pd.read_excel(uploaded_vendas)
-        clientes_df = pd.read_excel(uploaded_clientes)
+        # Carrega os arquivos diretamente
+        clientes_df = pd.read_excel('bd_clientes.xlsx')
+        vendas_df = pd.read_excel('bd_vendas.xlsx')
         
         # Padroniza os nomes das colunas
         clientes_df.columns = clientes_df.columns.str.upper()
@@ -248,6 +200,10 @@ def carregar_dados():
         # Converte margem para decimal
         if 'MARGEM' in vendas_df.columns:
             vendas_df['MARGEM'] = vendas_df['MARGEM'].str.rstrip('%').astype('float') / 100.0
+            
+        # Verifica qual nome da coluna de subcategoria está presente
+        if 'SUBCATEGORIA_SKU' in vendas_df.columns:
+            vendas_df = vendas_df.rename(columns={'SUBCATEGORIA_SKU': 'SUBCATEGORIA'})
         
         # Merge dos dataframes
         df_completo = pd.merge(vendas_df, clientes_df[['ID_CLIENTE', 'CANAL']], 
@@ -303,10 +259,6 @@ def calcular_score(df, grupo):
     
     return df_norm
 
-def formatar_valor(valor):
-    """Formata valores monetários."""
-    return f"R$ {valor:,.2f}"
-
 def main():
     # Título e logo
     col_logo, col_title = st.columns([1, 4])
@@ -323,6 +275,31 @@ def main():
     # Carrega dados
     df = carregar_dados()
     if df is None:
+        return
+        
+    # Verifica se as colunas necessárias existem
+    required_columns = ['CANAL', 'VENDA_VALOR', 'ID_CLIENTE', 'MARGEM']
+    missing_columns = [col for col in required_columns if col not in df.columns]
+    
+    if missing_columns:
+        st.error(f"❌ Colunas obrigatórias ausentes no arquivo: {', '.join(missing_columns)}")
+        st.markdown("""
+        ℹ️ O arquivo deve conter as seguintes colunas:
+        - CANAL: Canal de vendas
+        - VENDA_VALOR: Valor da venda
+        - ID_CLIENTE: Identificador do cliente
+        - MARGEM: Margem de lucro
+        """)
+        return
+        
+    # Verifica se existe pelo menos uma das colunas de subcategoria
+    if 'SUBCATEGORIA' not in df.columns and 'SUBCATEGORIA_SKU' not in df.columns:
+        st.error("❌ Coluna de subcategoria não encontrada!")
+        st.markdown("""
+        ℹ️ O arquivo deve conter uma das seguintes colunas:
+        - SUBCATEGORIA
+        - SUBCATEGORIA_SKU
+        """)
         return
     
     # Sidebar para filtros
@@ -372,8 +349,8 @@ def main():
     # Top 5 Subcategorias
     st.header("🏆 Top 5 Subcategorias Recomendadas")
     
-    # Calcula scores para todas as subcategorias
-    subcategorias_score = calcular_score(df_canal, 'SUBCATEGORIA_SKU')
+    # Calcula scores para subcategorias
+    subcategorias_score = calcular_score(df_canal, 'SUBCATEGORIA')
     
     # Garante que temos pelo menos algumas subcategorias
     if len(subcategorias_score) == 0:
@@ -383,13 +360,10 @@ def main():
     # Seleciona top 5
     top5_subcategorias = subcategorias_score.nlargest(5, 'SCORE')
     
-    # Adicionar colunas formatadas para o hover
-    top5_subcategorias['MARGEM'] = top5_subcategorias['MARGEM'] / 100  # Converter para decimal para formatação
-    
     # Cria o gráfico de barras
     fig_top5 = criar_grafico_barras(
         top5_subcategorias,
-        x='SUBCATEGORIA_SKU',
+        x='SUBCATEGORIA',
         y='SCORE',
         title='Top 5 Subcategorias por Score'
     )
@@ -405,8 +379,8 @@ def main():
     top5_display['Score Final'] = top5_display['SCORE'].apply(lambda x: f"{x:.3f}")
     
     st.dataframe(
-        top5_display[['SUBCATEGORIA_SKU', 'Valor Total', 'Qtd. Clientes', 'Margem Média', 'Score Final']].rename(columns={
-            'SUBCATEGORIA_SKU': 'Subcategoria'
+        top5_display[['SUBCATEGORIA', 'Valor Total', 'Qtd. Clientes', 'Margem Média', 'Score Final']].rename(columns={
+            'SUBCATEGORIA': 'Subcategoria'
         }),
         use_container_width=True,
         hide_index=True
@@ -416,15 +390,15 @@ def main():
     st.markdown("---")
     st.header("📊 Análise Detalhada por Subcategoria")
     
-    if len(top5_subcategorias) > 0:
-        subcategoria_selecionada = st.selectbox(
-            "Escolha uma subcategoria para análise aprofundada:",
-            options=top5_subcategorias['SUBCATEGORIA_SKU'].tolist(),
-            key='subcategoria_selector'
-        )
-        
+    subcategoria_selecionada = st.selectbox(
+        "Escolha uma subcategoria para análise aprofundada:",
+        options=top5_subcategorias['SUBCATEGORIA'].tolist(),
+        key='subcategoria_selector'
+    )
+    
+    if subcategoria_selecionada:
         # Dados da subcategoria selecionada
-        df_subcategoria = df_canal[df_canal['SUBCATEGORIA_SKU'] == subcategoria_selecionada].copy()
+        df_subcategoria = df_canal[df_canal['SUBCATEGORIA'] == subcategoria_selecionada].copy()
         
         if not df_subcategoria.empty:
             # Métricas da subcategoria selecionada
@@ -446,64 +420,23 @@ def main():
                 )
             
             # Gráfico de dispersão Margem x Faturamento
-            df_scatter = df_subcategoria.copy()
-            df_scatter['MARGEM'] = df_scatter['MARGEM'] / 100  # Converter para decimal para formatação
-            
             fig_scatter = criar_grafico_scatter(
-                df_scatter,
+                df_subcategoria,
                 x='MARGEM',
                 y='VENDA_VALOR',
                 color='MARGEM',
-                title=f"Análise de Produtos - {subcategoria_selecionada}"
+                title='Análise de Margem x Faturamento'
             )
             
             st.plotly_chart(fig_scatter, use_container_width=True)
             
-            # Top 10 SKUs
-            st.markdown("---")
-            st.header("🌟 Top 10 Produtos Recomendados")
+            # Gráfico detalhado da subcategoria
+            fig_detalhado = criar_grafico_detalhado(
+                df_subcategoria,
+                title='Análise Detalhada da Subcategoria'
+            )
             
-            skus_score = calcular_score(df_subcategoria, 'ID_SKU')
-            if not skus_score.empty:
-                top10_skus = skus_score.nlargest(10, 'SCORE')
-                
-                # Adiciona nome do SKU à tabela
-                top10_skus = pd.merge(
-                    top10_skus,
-                    df_subcategoria[['ID_SKU', 'NOME_SKU']].drop_duplicates(),
-                    left_on='ID_SKU',
-                    right_on='ID_SKU'
-                )
-                
-                # Formata a tabela para exibição
-                top10_skus_display = top10_skus.copy()
-                top10_skus_display['Valor Total'] = top10_skus_display['VENDA_VALOR'].apply(formatar_valor)
-                top10_skus_display['Margem'] = top10_skus_display['MARGEM'].apply(lambda x: f"{x:.1%}")
-                top10_skus_display['Score'] = top10_skus_display['SCORE'].apply(lambda x: f"{x:.3f}")
-                top10_skus_display['Qtd. Clientes'] = top10_skus_display['ID_CLIENTE']
-                
-                st.dataframe(
-                    top10_skus_display[['NOME_SKU', 'Valor Total', 'Qtd. Clientes', 'Margem', 'Score']].rename(columns={
-                        'NOME_SKU': 'Produto'
-                    }),
-                    use_container_width=True,
-                    hide_index=True
-                )
-            else:
-                st.warning("Não há produtos disponíveis nesta subcategoria.")
-        else:
-            st.warning("Não há dados disponíveis para esta subcategoria.")
-    else:
-        st.warning("Não há subcategorias disponíveis para análise detalhada.")
-    
-    # Rodapé
-    st.markdown("---")
-    st.markdown("""
-        <div style='text-align: center; color: #666666; padding: 20px;'>
-            <p>Dashboard desenvolvido por Ronaldo Pereira | Zeta Dados</p>
-            <p>Última atualização: Dezembro 2024</p>
-        </div>
-    """, unsafe_allow_html=True)
+            st.plotly_chart(fig_detalhado, use_container_width=True)
 
 if __name__ == "__main__":
     main()
