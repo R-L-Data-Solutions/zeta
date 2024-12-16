@@ -2,98 +2,86 @@
 ========================================================================
 Projeto: Dashboard de Análise de Portfolio - MAIS MERCANTIL
 Desenvolvido por: Ronaldo Pereira
-Data: 10 de Dezembro de 2024
+Data: 12 de Dezembro de 2024
 Empresa: Zeta Dados
 
 Descrição:
 -----------
 Dashboard interativo para análise do portfolio de produtos da MAIS MERCANTIL.
-Permite visualização e análise dinâmica das principais métricas de vendas,
-margem e popularidade por canal e subcategoria.
+Metodologia baseada em score composto que considera:
+- Faturamento (40%): Impacto direto no resultado financeiro
+- Popularidade (30%): Número de clientes únicos
+- Margem (30%): Lucratividade do produto
 
 Funcionalidades:
 ---------------
 - Visualização interativa de dados
 - Filtros por canal e subcategoria
-- Gráficos de performance
 - Análise detalhada de SKUs
 - Métricas em tempo real
+- Score composto para avaliação
 
 Tecnologias utilizadas:
 ---------------------
 - Python 3.9
-- Streamlit
+- Dash
 - Plotly
 - Pandas
 - NumPy
 
-Última atualização: 10/12/2024
+Última atualização: 12/12/2024
 ========================================================================
 """
 
-import streamlit as st
 import pandas as pd
+import numpy as np
 import plotly.express as px
 import plotly.graph_objects as go
-import numpy as np
-from PIL import Image
+from dash import Dash, html, dcc, Input, Output, callback
+import dash_bootstrap_components as dbc
 
-# Configuração da página
-st.set_page_config(
-    page_title="Análise de Portfolio - MAIS MERCANTIL",
-    layout="wide",
-    initial_sidebar_state="expanded"
+# Cores da Zeta Dados
+ZETA_COLORS = {
+    'primary': '#1A237E',    # Azul escuro
+    'secondary': '#42A5F5',  # Azul claro
+    'accent': '#4DB6AC',     # Verde água
+    'white': '#FFFFFF',      # Branco
+    'text': '#666666',       # Cinza para texto
+    'background': '#F5F7FA', # Cinza claro para fundo
+    'success': '#4CAF50',    # Verde para indicadores positivos
+    'warning': '#FFC107',    # Amarelo para alertas
+    'danger': '#F44336',     # Vermelho para indicadores negativos
+    'light_gray': '#D3D3D3', # Cinza claro
+    'dark_gray': '#333333',  # Cinza escuro
+    'light_blue': '#ADD8E6', # Azul claro
+    'dark_blue': '#03055B'   # Azul escuro
+}
+
+# Estilo global
+GLOBAL_STYLE = {
+    'backgroundColor': ZETA_COLORS['background'],
+    'color': ZETA_COLORS['text'],
+    'fontFamily': 'Arial, sans-serif'
+}
+
+CARD_STYLE = {
+    'backgroundColor': ZETA_COLORS['white'],
+    'borderRadius': '10px',
+    'padding': '20px',
+    'marginBottom': '20px',
+    'boxShadow': '0 2px 4px rgba(0,0,0,0.1)'
+}
+
+# Inicializa o app
+app = Dash(
+    __name__,
+    external_stylesheets=[dbc.themes.BOOTSTRAP],
+    title="Análise de Portfolio - MAIS MERCANTIL",
+    suppress_callback_exceptions=True
 )
 
-# Customização do tema com informações do desenvolvedor
-st.markdown("""
-    <style>
-    .main {
-        background-color: #f5f5f5;
-    }
-    .stTitle {
-        color: #1E3D59;
-        font-size: 3rem !important;
-        padding-bottom: 2rem;
-    }
-    .stMetric {
-        background-color: white;
-        padding: 1rem;
-        border-radius: 0.5rem;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-    }
-    .developer-info {
-        font-size: 0.8rem;
-        color: #666;
-        text-align: right;
-        padding: 5px;
-        position: fixed;
-        bottom: 0;
-        right: 10px;
-    }
-    </style>
-""", unsafe_allow_html=True)
-
-# Cabeçalho com logo
-col1, col2 = st.columns([1, 4])
-
-with col1:
-    # Carrega e exibe a imagem
-    try:
-        image = Image.open('images.png')
-        st.image(image, width=150)
-    except:
-        st.write("Imagem 'images.png' não encontrada")
-
-with col2:
-    st.title("Dashboard - Análise de Portfolio MAIS MERCANTIL")
-    st.markdown("---")
-
-# Título
-# st.title("Dashboard - Análise de Portfolio MAIS MERCANTIL")
-
-@st.cache_data
 def carregar_dados():
+    """Carrega e prepara os dados das bases de vendas e clientes."""
     # Carrega as bases de dados
     clientes_df = pd.read_excel('bd_clientes.xlsx')
     vendas_df = pd.read_excel('bd_vendas.xlsx')
@@ -105,272 +93,434 @@ def carregar_dados():
     # Converte a coluna MARGEM de percentual para decimal
     vendas_df['MARGEM'] = vendas_df['MARGEM'].str.rstrip('%').astype('float') / 100.0
     
+    # Merge dos dataframes para incluir o canal
+    vendas_df = pd.merge(vendas_df, clientes_df[['ID_CLIENTE', 'CANAL']], on='ID_CLIENTE', how='left')
+    
+    # Debug: mostrar canais disponíveis
+    print("\nCanais disponíveis:")
+    print(sorted(vendas_df['CANAL'].unique()))
+    
     return clientes_df, vendas_df
 
-def calcular_metricas_subcategoria(vendas_df, clientes_df):
-    # Merge com a base de clientes
-    df_analise = pd.merge(vendas_df, clientes_df, on='ID_CLIENTE', how='left')
-    
-    # Agrupa por canal e subcategoria
-    metricas = df_analise.groupby(['CANAL', 'SUBCATEGORIA_SKU']).agg({
-        'ID_SKU': 'nunique',  # Quantidade de SKUs diferentes
-        'ID_CLIENTE': 'nunique',  # Popularidade (quantidade de clientes)
-        'VENDA_VALOR': 'sum',  # Faturamento total
-        'MARGEM': 'mean'  # Margem média
+def calcular_metricas_subcategoria(vendas_df):
+    """Calcula métricas agregadas por subcategoria e canal."""
+    metricas = vendas_df.groupby(['CANAL', 'SUBCATEGORIA_SKU']).agg({
+        'ID_SKU': 'nunique',
+        'ID_CLIENTE': 'nunique',
+        'VENDA_VALOR': 'sum',
+        'MARGEM': 'mean'
     }).reset_index()
     
-    # Normaliza as métricas
-    for col in ['ID_SKU', 'ID_CLIENTE', 'VENDA_VALOR', 'MARGEM']:
-        metricas[f'{col}_NORM'] = (metricas[col] - metricas[col].min()) / (metricas[col].max() - metricas[col].min())
+    # Normalização das métricas por canal
+    for canal in metricas['CANAL'].unique():
+        mask = metricas['CANAL'] == canal
+        for col in ['ID_SKU', 'ID_CLIENTE', 'VENDA_VALOR', 'MARGEM']:
+            min_val = metricas.loc[mask, col].min()
+            max_val = metricas.loc[mask, col].max()
+            if max_val > min_val:
+                metricas.loc[mask, f'{col}_NORM'] = (metricas.loc[mask, col] - min_val) / (max_val - min_val)
+            else:
+                metricas.loc[mask, f'{col}_NORM'] = 1.0
     
-    # Calcula score
+    # Score composto com pesos definidos na metodologia
     metricas['SCORE'] = (
-        metricas['ID_CLIENTE_NORM'] * 0.3 +  # Popularidade
-        metricas['VENDA_VALOR_NORM'] * 0.4 +  # Faturamento
-        metricas['MARGEM_NORM'] * 0.3         # Margem
+        metricas['VENDA_VALOR_NORM'] * 0.4 +  # Faturamento: 40%
+        metricas['ID_CLIENTE_NORM'] * 0.3 +   # Popularidade: 30%
+        metricas['MARGEM_NORM'] * 0.3         # Margem: 30%
     )
     
     return metricas
 
 # Carrega os dados
 clientes_df, vendas_df = carregar_dados()
+metricas_df = calcular_metricas_subcategoria(vendas_df)
 
-# Calcula métricas
-metricas_df = calcular_metricas_subcategoria(vendas_df, clientes_df)
-
-# Sidebar para filtros
-st.sidebar.image('images.png', width=100)
-st.sidebar.markdown("## Filtros de Análise")
-st.sidebar.markdown("---")
-
-canal_selecionado = st.sidebar.selectbox(
-    "Selecione o Canal",
-    options=metricas_df['CANAL'].unique(),
-    help="Escolha o canal de vendas para análise"
-)
-
-# Filtra dados pelo canal selecionado
-dados_canal = metricas_df[metricas_df['CANAL'] == canal_selecionado]
-
-# Container para KPIs principais
-st.markdown("### Visão Geral do Canal")
-kpi1, kpi2, kpi3 = st.columns(3)
-
-with kpi1:
-    total_vendas = vendas_df.merge(clientes_df, on='ID_CLIENTE')
-    total_vendas = total_vendas[total_vendas['CANAL'] == canal_selecionado]['VENDA_VALOR'].sum()
-    st.metric(
-        "Faturamento Total",
-        f"R$ {total_vendas:,.2f}",
-        help="Faturamento total do canal selecionado"
-    )
-
-with kpi2:
-    total_clientes = vendas_df.merge(clientes_df, on='ID_CLIENTE')
-    total_clientes = total_clientes[total_clientes['CANAL'] == canal_selecionado]['ID_CLIENTE'].nunique()
-    st.metric(
-        "Total de Clientes",
-        f"{total_clientes:,}",
-        help="Número total de clientes únicos no canal"
-    )
-
-with kpi3:
-    margem_media = vendas_df.merge(clientes_df, on='ID_CLIENTE')
-    margem_media = margem_media[margem_media['CANAL'] == canal_selecionado]['MARGEM'].mean()
-    st.metric(
-        "Margem Média",
-        f"{margem_media:.1%}",
-        help="Margem média de lucro no canal"
-    )
-
-st.markdown("---")
-
-# Layout em colunas para gráficos
-col1, col2 = st.columns(2)
-
-with col1:
-    # Gráfico de Top 5 Subcategorias por Score
-    fig_score = px.bar(
-        dados_canal.nlargest(5, 'SCORE'),
-        x='SUBCATEGORIA_SKU',
-        y='SCORE',
-        title=f'Top 5 Subcategorias por Score - {canal_selecionado}',
-        color='SCORE',
-        color_continuous_scale='Viridis'
-    )
-    fig_score.update_layout(
-        xaxis_title="Subcategoria",
-        yaxis_title="Score",
-        showlegend=False,
-        height=400,
-        template='none',
-        plot_bgcolor='white',
-        paper_bgcolor='white',
-        xaxis=dict(showgrid=True, gridwidth=1, gridcolor='#f0f0f0'),
-        yaxis=dict(showgrid=True, gridwidth=1, gridcolor='#f0f0f0')
-    )
-    st.plotly_chart(fig_score, use_container_width=True)
-
-with col2:
-    # Gráfico de dispersão Margem x Faturamento
-    fig_scatter = px.scatter(
-        dados_canal,
-        x='MARGEM',
-        y='VENDA_VALOR',
-        size='ID_CLIENTE',
-        color='SCORE',
-        hover_data=['SUBCATEGORIA_SKU'],
-        title=f'Margem x Faturamento - {canal_selecionado}'
-    )
-    fig_scatter.update_layout(
-        xaxis_title="Margem",
-        yaxis_title="Faturamento (R$)",
-        height=400,
-        template='none',
-        plot_bgcolor='white',
-        paper_bgcolor='white',
-        xaxis=dict(showgrid=True, gridwidth=1, gridcolor='#f0f0f0'),
-        yaxis=dict(showgrid=True, gridwidth=1, gridcolor='#f0f0f0')
-    )
-    fig_scatter.update_traces(
-        marker=dict(line=dict(width=1, color='DarkSlateGrey')),
-        selector=dict(mode='markers')
-    )
-    st.plotly_chart(fig_scatter, use_container_width=True)
-
-st.markdown("---")
-
-# Top 10 SKUs da subcategoria selecionada
-st.header("Análise Detalhada de SKUs")
-subcategoria_selecionada = st.selectbox(
-    "Selecione a Subcategoria para análise detalhada",
-    options=dados_canal['SUBCATEGORIA_SKU'].unique(),
-    help="Escolha uma subcategoria para ver os top 10 SKUs"
-)
-
-# Filtra vendas para a subcategoria selecionada
-vendas_subcategoria = vendas_df.merge(clientes_df, on='ID_CLIENTE')
-vendas_subcategoria = vendas_subcategoria[
-    (vendas_subcategoria['CANAL'] == canal_selecionado) &
-    (vendas_subcategoria['SUBCATEGORIA_SKU'] == subcategoria_selecionada)
-]
-
-# Agrupa por SKU
-skus_metrics = vendas_subcategoria.groupby(['ID_SKU', 'NOME_SKU']).agg({
-    'ID_CLIENTE': 'nunique',
-    'VENDA_VALOR': 'sum',
-    'MARGEM': 'mean'
-}).reset_index()
-
-# Normaliza e calcula score
-for col in ['ID_CLIENTE', 'VENDA_VALOR', 'MARGEM']:
-    skus_metrics[f'{col}_NORM'] = (skus_metrics[col] - skus_metrics[col].min()) / (skus_metrics[col].max() - skus_metrics[col].min())
-
-skus_metrics['SCORE'] = (
-    skus_metrics['ID_CLIENTE_NORM'] * 0.3 +
-    skus_metrics['VENDA_VALOR_NORM'] * 0.4 +
-    skus_metrics['MARGEM_NORM'] * 0.3
-)
-
-# Mostra top 10 SKUs
-top_skus = skus_metrics.nlargest(10, 'SCORE')
-st.subheader(f"Top 10 SKUs - {subcategoria_selecionada}")
-
-# Cria uma tabela formatada com cores mais atraentes
-fig_table = go.Figure(data=[go.Table(
-    header=dict(
-        values=['SKU', 'Nome', 'Qtd. Clientes', 'Faturamento', 'Margem', 'Score'],
-        fill_color='#1E3D59',
-        font=dict(color='white', size=12),
-        align='left',
-        height=40
-    ),
-    cells=dict(
-        values=[
-            top_skus['ID_SKU'],
-            top_skus['NOME_SKU'],
-            top_skus['ID_CLIENTE'].apply(lambda x: f"{x:,}"),
-            top_skus['VENDA_VALOR'].apply(lambda x: f"R$ {x:,.2f}"),
-            (top_skus['MARGEM'] * 100).round(2).astype(str) + '%',
-            top_skus['SCORE'].round(3)
-        ],
-        fill_color=['#F5F7FA']*6,
-        font=dict(color=['#1E3D59']*6),
-        align='left',
-        height=30
-    )
-)])
-
-fig_table.update_layout(
-    margin=dict(t=5, b=5),
-    height=350
-)
-
-st.plotly_chart(fig_table, use_container_width=True)
-
-# Métricas gerais em cards mais atraentes
-st.markdown("### Métricas Gerais da Subcategoria")
-st.markdown("""
-    <style>
-    .metric-card {
-        background-color: white;
-        padding: 20px;
-        border-radius: 10px;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-        text-align: center;
-    }
-    .metric-value {
-        font-size: 24px;
-        font-weight: bold;
-        color: #1E3D59;
-    }
-    .metric-label {
-        font-size: 14px;
-        color: #666;
-        margin-top: 5px;
-    }
-    </style>
-""", unsafe_allow_html=True)
-
-col1, col2, col3, col4 = st.columns(4)
-
-with col1:
-    st.markdown(f"""
-        <div class="metric-card">
-            <div class="metric-value">{len(skus_metrics):,}</div>
-            <div class="metric-label">Total SKUs</div>
-        </div>
-    """, unsafe_allow_html=True)
+# Layout do dashboard
+app.layout = dbc.Container([
+    # Header com logo e título
+    dbc.Row([
+        dbc.Col([
+            html.Img(src='assets/images.png', style={'height': '80px'}),
+        ], width=2),
+        dbc.Col([
+            html.H1(
+                "Dashboard - Análise de Portfolio MAIS MERCANTIL",
+                style={
+                    'color': ZETA_COLORS['primary'],
+                    'paddingTop': '20px'
+                }
+            ),
+            html.P([
+                "Análise por canal de distribuição | ",
+                "Score composto: ",
+                html.Span("Faturamento (40%)", style={'color': ZETA_COLORS['success']}),
+                " | ",
+                html.Span("Popularidade (30%)", style={'color': ZETA_COLORS['accent']}),
+                " | ",
+                html.Span("Margem (30%)", style={'color': ZETA_COLORS['warning']})
+            ], style={'color': ZETA_COLORS['text']})
+        ], width=10)
+    ], className='mb-4'),
     
-with col2:
-    st.markdown(f"""
-        <div class="metric-card">
-            <div class="metric-value">{vendas_subcategoria['ID_CLIENTE'].nunique():,}</div>
-            <div class="metric-label">Total Clientes</div>
-        </div>
-    """, unsafe_allow_html=True)
+    # Filtros
+    dbc.Row([
+        dbc.Col([
+            dbc.Card([
+                dbc.CardBody([
+                    html.H4("Seleção de Canal", style={'color': ZETA_COLORS['primary']}),
+                    html.P("Selecione o canal para análise detalhada:", style={'color': ZETA_COLORS['text']}),
+                    dcc.Dropdown(
+                        id='canal-dropdown',
+                        options=[{'label': canal, 'value': canal} for canal in sorted(metricas_df['CANAL'].unique())],
+                        value=sorted(metricas_df['CANAL'].unique())[0],
+                        style={'marginBottom': '10px'}
+                    )
+                ])
+            ], style=CARD_STYLE)
+        ])
+    ]),
     
-with col3:
-    st.markdown(f"""
-        <div class="metric-card">
-            <div class="metric-value">R$ {vendas_subcategoria['VENDA_VALOR'].sum():,.2f}</div>
-            <div class="metric-label">Faturamento Total</div>
-        </div>
-    """, unsafe_allow_html=True)
+    # KPIs principais
+    dbc.Row([
+        dbc.Col([
+            dbc.Card([
+                dbc.CardBody([
+                    html.H4("💰 Faturamento Total", className="card-title", style={'color': ZETA_COLORS['primary']}),
+                    html.Div(id='kpi-faturamento', className="display-4"),
+                    html.P("40% do score composto", style={'color': ZETA_COLORS['success']})
+                ])
+            ], style=CARD_STYLE)
+        ]),
+        dbc.Col([
+            dbc.Card([
+                dbc.CardBody([
+                    html.H4("👥 Total de Clientes", className="card-title", style={'color': ZETA_COLORS['primary']}),
+                    html.Div(id='kpi-clientes', className="display-4"),
+                    html.P("30% do score composto", style={'color': ZETA_COLORS['accent']})
+                ])
+            ], style=CARD_STYLE)
+        ]),
+        dbc.Col([
+            dbc.Card([
+                dbc.CardBody([
+                    html.H4("📈 Margem Média", className="card-title", style={'color': ZETA_COLORS['primary']}),
+                    html.Div(id='kpi-margem', className="display-4"),
+                    html.P("30% do score composto", style={'color': ZETA_COLORS['warning']})
+                ])
+            ], style=CARD_STYLE)
+        ])
+    ]),
     
-with col4:
-    st.markdown(f"""
-        <div class="metric-card">
-            <div class="metric-value">{(vendas_subcategoria['MARGEM'].mean() * 100):.2f}%</div>
-            <div class="metric-label">Margem Média</div>
-        </div>
-    """, unsafe_allow_html=True)
+    # Gráficos principais
+    dbc.Row([
+        dbc.Col([
+            dbc.Card([
+                dbc.CardBody([
+                    html.H4("🏆 Top 5 Subcategorias", style={'color': ZETA_COLORS['primary']}),
+                    html.P([
+                        "Ranking das 5 melhores subcategorias baseado no score composto. ",
+                        "As linhas mostram a contribuição de cada componente para o score final."
+                    ], style={'color': ZETA_COLORS['text']}),
+                    dcc.Graph(id='graph-top5')
+                ])
+            ], style=CARD_STYLE)
+        ], width=6),
+        dbc.Col([
+            dbc.Card([
+                dbc.CardBody([
+                    html.H4("📊 Análise Margem x Faturamento", style={'color': ZETA_COLORS['primary']}),
+                    html.P([
+                        "Visualização da relação entre margem e faturamento. ",
+                        "O tamanho dos pontos representa o número de clientes e as cores indicam o quartil do score."
+                    ], style={'color': ZETA_COLORS['text']}),
+                    dcc.Graph(id='graph-scatter')
+                ])
+            ], style=CARD_STYLE)
+        ], width=6)
+    ]),
+    
+    # Tabela detalhada
+    dbc.Row([
+        dbc.Col([
+            dbc.Card([
+                dbc.CardBody([
+                    html.H4("🔍 Top 10 SKUs por Subcategoria", style={'color': ZETA_COLORS['primary']}),
+                    html.P([
+                        "Selecione uma subcategoria para ver os 10 melhores SKUs, ",
+                        "ordenados pelo mesmo score composto usado na análise."
+                    ], style={'color': ZETA_COLORS['text']}),
+                    dcc.Dropdown(
+                        id='subcategoria-dropdown',
+                        style={'marginBottom': '20px'}
+                    ),
+                    dcc.Graph(id='table-skus')
+                ])
+            ], style=CARD_STYLE)
+        ])
+    ]),
+    
+    # Footer
+    dbc.Row([
+        dbc.Col([
+            html.Hr(),
+            html.P([
+                "Dashboard desenvolvido por Ronaldo Pereira | ",
+                html.A("Zeta Dados", href="#", style={'color': ZETA_COLORS['primary']}),
+                " | Dezembro 2024"
+            ], style={
+                'textAlign': 'center',
+                'color': ZETA_COLORS['text'],
+                'padding': '20px'
+            })
+        ])
+    ])
+], fluid=True, style=GLOBAL_STYLE)
 
-# Adiciona informações do desenvolvedor no footer
-st.markdown("""
-    <div style='text-align: center; color: #666; padding: 20px;'>
-        Desenvolvido por Ronaldo Pereira | Zeta Dados<br>
-        Análise de Portfolio MAIS MERCANTIL<br>
-        Dezembro 2024
-    </div>
-""", unsafe_allow_html=True)
+# Callbacks
+@app.callback(
+    [Output('kpi-faturamento', 'children'),
+     Output('kpi-clientes', 'children'),
+     Output('kpi-margem', 'children')],
+    Input('canal-dropdown', 'value')
+)
+def update_kpis(canal):
+    """Atualiza os KPIs com base no canal selecionado."""
+    df_canal = vendas_df[vendas_df['CANAL'] == canal]
+    
+    faturamento = df_canal['VENDA_VALOR'].sum()
+    clientes = df_canal['ID_CLIENTE'].nunique()
+    margem = df_canal['MARGEM'].mean()
+    
+    return [
+        f"R$ {faturamento:,.2f}",
+        f"{clientes:,}",
+        f"{margem:.1%}"
+    ]
+
+@app.callback(
+    Output('subcategoria-dropdown', 'options'),
+    Output('subcategoria-dropdown', 'value'),
+    Input('canal-dropdown', 'value')
+)
+def update_subcategoria_options(canal):
+    """Atualiza as opções do dropdown de subcategorias."""
+    subcategorias = sorted(vendas_df[vendas_df['CANAL'] == canal]['SUBCATEGORIA_SKU'].unique())
+    options = [{'label': sub, 'value': sub} for sub in subcategorias]
+    value = subcategorias[0] if subcategorias else None
+    return options, value
+
+@app.callback(
+    Output('graph-top5', 'figure'),
+    Input('canal-dropdown', 'value')
+)
+def update_top5_graph(canal):
+    """Atualiza o gráfico de top 5 subcategorias."""
+    df_canal = metricas_df[metricas_df['CANAL'] == canal].sort_values('SCORE', ascending=False).head(5)
+    
+    fig = go.Figure()
+    
+    # Barra principal - Score total
+    fig.add_trace(go.Bar(
+        name='Score Total',
+        x=df_canal['SUBCATEGORIA_SKU'],
+        y=df_canal['SCORE'],
+        marker_color=ZETA_COLORS['primary'],
+        opacity=0.7
+    ))
+    
+    # Linhas para cada componente do score
+    fig.add_trace(go.Scatter(
+        name='Faturamento (40%)',
+        x=df_canal['SUBCATEGORIA_SKU'],
+        y=df_canal['VENDA_VALOR_NORM'] * 0.4,
+        mode='lines+markers',
+        line=dict(color=ZETA_COLORS['success'], width=2),
+        marker=dict(size=8)
+    ))
+    
+    fig.add_trace(go.Scatter(
+        name='Popularidade (30%)',
+        x=df_canal['SUBCATEGORIA_SKU'],
+        y=df_canal['ID_CLIENTE_NORM'] * 0.3,
+        mode='lines+markers',
+        line=dict(color=ZETA_COLORS['accent'], width=2),
+        marker=dict(size=8)
+    ))
+    
+    fig.add_trace(go.Scatter(
+        name='Margem (30%)',
+        x=df_canal['SUBCATEGORIA_SKU'],
+        y=df_canal['MARGEM_NORM'] * 0.3,
+        mode='lines+markers',
+        line=dict(color=ZETA_COLORS['warning'], width=2),
+        marker=dict(size=8)
+    ))
+    
+    fig.update_layout(
+        title=f'Top 5 Subcategorias - {canal}',
+        xaxis_title='Subcategoria',
+        yaxis_title='Score Composto',
+        template='plotly_white',
+        showlegend=True,
+        legend=dict(
+            orientation="h",
+            yanchor="bottom",
+            y=1.02,
+            xanchor="right",
+            x=1
+        )
+    )
+    
+    return fig
+
+@app.callback(
+    Output('graph-scatter', 'figure'),
+    [Input('canal-dropdown', 'value')]
+)
+def update_scatter_graph(canal):
+    """Atualiza o gráfico de dispersão Margem x Faturamento."""
+    df_canal = metricas_df[metricas_df['CANAL'] == canal]
+    
+    # Normalizar o tamanho dos pontos
+    size_norm = (df_canal['ID_CLIENTE'] - df_canal['ID_CLIENTE'].min()) / \
+                (df_canal['ID_CLIENTE'].max() - df_canal['ID_CLIENTE'].min()) * 40 + 10
+    
+    # Calcular quartis para coloração
+    df_canal['SCORE_QUARTILE'] = pd.qcut(df_canal['SCORE'], q=4, labels=['Q1', 'Q2', 'Q3', 'Q4'])
+    
+    color_map = {
+        'Q1': ZETA_COLORS['danger'],
+        'Q2': ZETA_COLORS['warning'],
+        'Q3': ZETA_COLORS['accent'],
+        'Q4': ZETA_COLORS['success']
+    }
+    
+    fig = go.Figure()
+    
+    for quartile in ['Q4', 'Q3', 'Q2', 'Q1']:
+        mask = df_canal['SCORE_QUARTILE'] == quartile
+        df_quartile = df_canal[mask]
+        
+        fig.add_trace(go.Scatter(
+            x=df_quartile['VENDA_VALOR'],
+            y=df_quartile['MARGEM'],
+            mode='markers',
+            name=f'Score {quartile}',
+            marker=dict(
+                size=size_norm[mask],
+                color=color_map[quartile],
+                opacity=0.7,
+                line=dict(width=1, color='white')
+            ),
+            text=df_quartile['SUBCATEGORIA_SKU'],
+            hovertemplate="<b>%{text}</b><br>" +
+                         "Faturamento: R$ %{x:,.2f}<br>" +
+                         "Margem: %{y:.1%}<br>" +
+                         "Clientes: %{marker.size:.0f}<br>" +
+                         "<extra></extra>"
+        ))
+    
+    # Adicionar linhas de média
+    fig.add_hline(y=df_canal['MARGEM'].mean(), line_dash="dash", line_color=ZETA_COLORS['primary'],
+                  annotation_text="Margem Média", annotation_position="bottom right")
+    fig.add_vline(x=df_canal['VENDA_VALOR'].mean(), line_dash="dash", line_color=ZETA_COLORS['primary'],
+                  annotation_text="Faturamento Médio", annotation_position="top right")
+    
+    fig.update_layout(
+        title=f'Análise Margem x Faturamento - {canal}',
+        xaxis_title='Faturamento (R$)',
+        yaxis_title='Margem (%)',
+        template='plotly_white',
+        showlegend=True,
+        legend=dict(
+            orientation="h",
+            yanchor="bottom",
+            y=1.02,
+            xanchor="right",
+            x=1
+        )
+    )
+    
+    # Formatação dos eixos
+    fig.update_xaxes(tickformat=",.0f", tickprefix="R$ ")
+    fig.update_yaxes(tickformat=".1%")
+    
+    return fig
+
+@app.callback(
+    Output('table-skus', 'figure'),
+    [Input('canal-dropdown', 'value'),
+     Input('subcategoria-dropdown', 'value')]
+)
+def update_skus_table(canal, subcategoria):
+    """Atualiza a tabela de SKUs com informações detalhadas."""
+    if not subcategoria:
+        return go.Figure()
+    
+    # Filtrar dados
+    mask = (vendas_df['CANAL'] == canal) & (vendas_df['SUBCATEGORIA_SKU'] == subcategoria)
+    df_skus = vendas_df[mask].groupby('ID_SKU').agg({
+        'VENDA_VALOR': 'sum',
+        'MARGEM': 'mean',
+        'ID_CLIENTE': 'nunique'
+    }).reset_index()
+    
+    # Normalizar métricas
+    for col in ['VENDA_VALOR', 'MARGEM', 'ID_CLIENTE']:
+        min_val = df_skus[col].min()
+        max_val = df_skus[col].max()
+        if max_val > min_val:
+            df_skus[f'{col}_NORM'] = (df_skus[col] - min_val) / (max_val - min_val)
+        else:
+            df_skus[f'{col}_NORM'] = 1.0
+    
+    # Calcular score
+    df_skus['SCORE'] = (
+        df_skus['VENDA_VALOR_NORM'] * 0.4 +  # Faturamento: 40%
+        df_skus['ID_CLIENTE_NORM'] * 0.3 +   # Popularidade: 30%
+        df_skus['MARGEM_NORM'] * 0.3         # Margem: 30%
+    )
+    
+    # Ordenar e pegar top 10
+    df_skus = df_skus.nlargest(10, 'SCORE')
+    
+    # Criar tabela
+    fig = go.Figure(data=[go.Table(
+        header=dict(
+            values=['<b>SKU</b>', '<b>Score</b>', '<b>Faturamento</b>', '<b>Margem</b>', '<b>Clientes</b>'],
+            fill_color=ZETA_COLORS['primary'],
+            align=['left', 'center', 'right', 'right', 'right'],
+            font=dict(color='white', size=12),
+            height=40
+        ),
+        cells=dict(
+            values=[
+                df_skus['ID_SKU'],
+                df_skus['SCORE'].apply(lambda x: f"{x:.2f}"),
+                df_skus['VENDA_VALOR'].apply(lambda x: f"R$ {x:,.2f}"),
+                df_skus['MARGEM'].apply(lambda x: f"{x:.1%}"),
+                df_skus['ID_CLIENTE'].apply(lambda x: f"{int(x):,}")
+            ],
+            fill_color=[
+                [ZETA_COLORS['white']]*10,
+                [ZETA_COLORS['background']]*10,
+                [ZETA_COLORS['white']]*10,
+                [ZETA_COLORS['background']]*10,
+                [ZETA_COLORS['white']]*10
+            ],
+            align=['left', 'center', 'right', 'right', 'right'],
+            font=dict(color=ZETA_COLORS['text'], size=11),
+            height=30
+        )
+    )])
+    
+    fig.update_layout(
+        title=f'Top 10 SKUs - {subcategoria}',
+        margin=dict(l=10, r=10, t=30, b=10),
+        height=400
+    )
+    
+    return fig
+
+if __name__ == '__main__':
+    app.run_server(debug=True)
