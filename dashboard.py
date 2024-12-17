@@ -133,12 +133,31 @@ def criar_grafico_detalhado(df_subcategoria, title):
     # Preparar os dados
     df_analise = df_subcategoria.copy()
     
-    # Calcular quartis de venda
-    df_analise['Faixa'] = pd.qcut(
-        df_analise['VENDA_VALOR'], 
-        q=3, 
-        labels=['Vendas Baixas', 'Vendas Médias', 'Vendas Altas']
-    )
+    # Calcular os limites para as faixas de venda
+    min_valor = df_analise['VENDA_VALOR'].min()
+    max_valor = df_analise['VENDA_VALOR'].max()
+    
+    try:
+        # Primeira tentativa: usar qcut para divisão em quartis
+        df_analise['Faixa'] = pd.qcut(
+            df_analise['VENDA_VALOR'], 
+            q=3, 
+            labels=['Vendas Baixas', 'Vendas Médias', 'Vendas Altas']
+        )
+    except ValueError:
+        # Se falhar, usar cut com intervalos fixos
+        bins = [
+            min_valor,
+            min_valor + (max_valor - min_valor)/3,
+            min_valor + 2*(max_valor - min_valor)/3,
+            max_valor
+        ]
+        df_analise['Faixa'] = pd.cut(
+            df_analise['VENDA_VALOR'],
+            bins=bins,
+            labels=['Vendas Baixas', 'Vendas Médias', 'Vendas Altas'],
+            include_lowest=True
+        )
     
     # Agregar dados por faixa
     df_grouped = df_analise.groupby('Faixa').agg({
